@@ -1,0 +1,380 @@
+/* ─── Reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI',
+    system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #fff;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* ─── Weather panel (mobile-first bottom sheet) ─────────────────────────────── */
+.weather-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+
+  background: rgba(10, 14, 26, 0.82);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px 20px 0 0;
+
+  padding: 0 0 env(safe-area-inset-bottom, 0);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  user-select: none;
+}
+
+/* ─── Header: always visible on mobile ─────────────────────────────────────── */
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.weather-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.weather-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.temp {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.desc {
+  font-size: 13px;
+  color: rgba(255,255,255,0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.turbulence-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.expand-arrow {
+  font-size: 10px;
+  color: rgba(255,255,255,0.4);
+  flex-shrink: 0;
+}
+
+/* ─── Quick action buttons ──────────────────────────────────────────────────── */
+.quick-actions {
+  display: flex;
+  gap: 8px;
+  padding: 6px 16px 12px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.8);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 44px; /* touch target */
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.action-btn:active {
+  transform: scale(0.97);
+}
+
+.action-btn.active {
+  background: rgba(99, 179, 237, 0.2);
+  border-color: rgba(99, 179, 237, 0.5);
+  color: #63b3ed;
+}
+
+.turbulence-toggle.active {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.btn-icon {
+  font-size: 16px;
+}
+
+.btn-label {
+  font-size: 12px;
+}
+
+.clear-btn {
+  margin-left: auto;
+}
+
+/* ─── Route hint ─────────────────────────────────────────────────────────────  */
+.route-hint {
+  padding: 6px 16px 8px;
+  font-size: 12px;
+  color: rgba(99, 179, 237, 0.9);
+  animation: hint-fade 1.5s ease-in-out infinite;
+}
+
+@keyframes hint-fade {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─── Route summary ─────────────────────────────────────────────────────────── */
+.route-summary {
+  display: flex;
+  gap: 12px;
+  padding: 4px 16px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.route-stat {
+  color: rgba(255,255,255,0.85);
+}
+
+/* ─── Expanded panel body ────────────────────────────────────────────────────  */
+.panel-body {
+  padding: 8px 16px 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.data-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.data-label {
+  font-size: 12px;
+  color: rgba(255,255,255,0.45);
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.data-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.92);
+}
+
+.data-value.dim {
+  color: rgba(255,255,255,0.4);
+  font-size: 12px;
+}
+
+/* ─── Turbulence bar ────────────────────────────────────────────────────────── */
+.turbulence-row {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.turbulence-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.turbulence-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 1s ease, background 1s ease;
+}
+
+.turbulence-pct {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 35px;
+  text-align: right;
+}
+
+/* ─── Quality buttons ───────────────────────────────────────────────────────── */
+.quality-btns {
+  display: flex;
+  gap: 5px;
+}
+
+.quality-btn {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.6);
+  font-size: 11px;
+  cursor: pointer;
+  min-height: 32px;
+  transition: all 0.15s;
+}
+
+.quality-btn.active {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #c4b5fd;
+  font-weight: 600;
+}
+
+/* ─── Time slider ─────────────────────────────────────────────────────────── */
+.time-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.time-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.time-slider {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.time-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  cursor: pointer;
+  border: 2px solid #fff;
+}
+
+.time-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* ─── Loading splash ─────────────────────────────────────────────────────────  */
+.loading-splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  gap: 12px;
+  z-index: 50;
+}
+
+.loading-globe {
+  font-size: 56px;
+  animation: globe-spin 3s linear infinite;
+}
+
+@keyframes globe-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.loading-splash p {
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.5px;
+}
+
+/* ─── Desktop layout (768px+) ───────────────────────────────────────────────── */
+@media (min-width: 768px) {
+  .weather-panel {
+    /* Side panel on desktop */
+    bottom: auto;
+    top: 0;
+    left: 0;
+    right: auto;
+    height: 100dvh;
+    width: 300px;
+    border-top: none;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-header {
+    padding: 20px 16px 12px;
+    cursor: default;
+  }
+
+  .expand-arrow {
+    display: none;
+  }
+
+  /* Always show body on desktop */
+  .panel-body {
+    display: flex !important;
+  }
+
+  .quick-actions {
+    flex-wrap: wrap;
+  }
+}
+
+/* ─── Cesium attribution override ───────────────────────────────────────────── */
+.cesium-credit-container,
+.cesium-credit-expand-link {
+  font-size: 10px !important;
+  opacity: 0.6;
+}

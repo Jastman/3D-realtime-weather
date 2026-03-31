@@ -35,7 +35,7 @@ export function WeatherClouds({
   }, [windDriftX, windDriftY])
 
   return (
-    <EffectComposer enableNormalPass>
+    <EffectComposer enableNormalPass multisampling={0}>
       <Clouds
         ref={cloudsRef}
         qualityPreset={qualityPreset}

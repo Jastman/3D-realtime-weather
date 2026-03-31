@@ -14,6 +14,7 @@ export default defineConfig({
       '@takram/three-geospatial',
     ],
   },
+  base: '/3D-realtime-weather/',
   build: {
     target: 'esnext',
   },

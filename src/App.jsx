@@ -76,7 +76,7 @@ export default function App() {
     <>
       <Canvas
         camera={{ position: [0, 0, 2e7], far: 1e9, near: 100 }}
-        gl={{ antialias: true, alpha: false }}
+        gl={{ antialias: false, alpha: false }}
         style={{ width: '100vw', height: '100dvh' }}
       >
         <AtmosphereScene lat={location.lat} lon={location.lon} date={currentDate}>

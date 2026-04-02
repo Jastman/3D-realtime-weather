@@ -14,10 +14,13 @@ export function AtmosphereScene({ lat, lon, date, children }) {
 
   return (
     <Atmosphere date={date} correctAltitude textures={ATMOSPHERE_TEXTURES_URL}>
-      <group position={ecefPosition.toArray()}>
-        <SunLight />
-        <SkyLight />
-      </group>
+      {/* SunLight/SkyLight use sun direction from AtmosphereContext (date-driven).
+          They're global scene lights — position of the wrapper group doesn't affect
+          sun direction, but we keep it here for atmosphere coordinate reference. */}
+      <SunLight />
+      <SkyLight />
+
+      <group position={ecefPosition.toArray()} />
 
       {children}
     </Atmosphere>

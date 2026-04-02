@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
-import { Vector3 } from 'three'
 
 import { AtmosphereScene } from './components/AtmosphereScene'
 import { Globe } from './components/Globe'
@@ -12,29 +11,36 @@ import { WeatherPanel } from './components/WeatherPanel'
 
 import { useWeatherData } from './hooks/useWeatherData'
 import { useTurbulence } from './hooks/useTurbulence'
-import { useFlightRoute } from './hooks/useFlightRoute'
-import { latLonToECEF } from './utils/greatCircle'
+import { useReverseGeocode } from './hooks/useReverseGeocode'
+import { latLonToECEF, ecefToLatLon, computeGreatCircle, haversineDistanceKm } from './utils/greatCircle'
 
 // Default location: New York City
 const DEFAULT_LAT = 40.7128
 const DEFAULT_LON = -74.006
 
+// 1,000 ft in meters
+const INITIAL_ALT = 305
+
+// Earth radius (meters) for altitude calc
+const EARTH_R = 6_371_000
+
+// Hide volumetric clouds above this altitude (120 km = orbital view)
+const CLOUD_MAX_ALT = 120_000
+
 /**
- * Positions the camera at an oblique 3D view of the given location.
- * Runs on first mount (default NYC) and once more when geolocation resolves.
- * After that, user controls take over and the camera is not touched.
+ * Positions the camera at a 1,000-ft oblique view of the given location.
+ * Fires once on mount (NYC default) and once more when geolocation resolves.
  */
 function CameraSetup({ lat, lon, ready }) {
   const { camera } = useThree()
   const hasFlown = useRef(false)
 
   useEffect(() => {
-    // Don't re-position once we've flown to the user's actual location
     if (hasFlown.current) return
     if (ready) hasFlown.current = true
 
-    // Camera 2200 km above surface, offset south-east for a 40° oblique angle
-    const camPos = latLonToECEF(lat + 22, lon + 18, 2_200_000)
+    // ~0.003° lat offset @ 305 m → ~30° oblique angle
+    const camPos = latLonToECEF(lat + 0.003, lon + 0.002, INITIAL_ALT)
     const lookAt  = latLonToECEF(lat, lon, 0)
     camera.position.set(camPos.x, camPos.y, camPos.z)
     camera.lookAt(lookAt.x, lookAt.y, lookAt.z)
@@ -43,28 +49,48 @@ function CameraSetup({ lat, lon, ready }) {
   return null
 }
 
+/**
+ * Each frame, checks camera altitude above Earth surface.
+ * Only triggers a React re-render when crossing the CLOUD_MAX_ALT threshold.
+ */
+function CameraTracker({ onCloudsVisible }) {
+  const { camera } = useThree()
+  const lastRef = useRef(null)
+
+  useFrame(() => {
+    const alt = camera.position.length() - EARTH_R
+    const visible = alt < CLOUD_MAX_ALT
+    if (visible !== lastRef.current) {
+      lastRef.current = visible
+      onCloudsVisible(visible)
+    }
+  })
+
+  return null
+}
+
 export default function App() {
-  // ── Location: try geolocation, fall back to NYC ──────────────────────────
+  // ── Location ─────────────────────────────────────────────────────────────
   const [location, setLocation] = useState({ lat: DEFAULT_LAT, lon: DEFAULT_LON })
   const [locationReady, setLocationReady] = useState(false)
 
   useEffect(() => {
-    if (!navigator.geolocation) {
-      setLocationReady(true)
-      return
-    }
+    if (!navigator.geolocation) { setLocationReady(true); return }
     navigator.geolocation.getCurrentPosition(
       pos => {
         setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude })
         setLocationReady(true)
       },
-      () => {
-        // Permission denied or error → use NYC default
-        setLocationReady(true)
-      },
+      () => setLocationReady(true),
       { timeout: 8000, maximumAge: 60_000 }
     )
   }, [])
+
+  // ── Reverse geocode → city/state/country ─────────────────────────────────
+  const locationName = useReverseGeocode(
+    locationReady ? location.lat : null,
+    locationReady ? location.lon : null
+  )
 
   // ── Live date (drives sun position) ──────────────────────────────────────
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -73,95 +99,138 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  // ── Weather data from Open-Meteo ──────────────────────────────────────────
+  // ── Weather ───────────────────────────────────────────────────────────────
   const { weather, loading: weatherLoading } = useWeatherData(
     locationReady ? location.lat : null,
     locationReady ? location.lon : null
   )
-
-  // ── Derived turbulence + cloud params ────────────────────────────────────
   const turbulenceData = useTurbulence(weather)
 
-  // ── UI state ──────────────────────────────────────────────────────────────
+  // ── App state ─────────────────────────────────────────────────────────────
   const [qualityPreset, setQualityPreset] = useState('high')
-  const [showTurbulenceLayer, setShowTurbulenceLayer] = useState(false)
+  const [appMode, setAppMode] = useState('weather')   // 'weather' | 'turbulence'
+  const [tempUnit, setTempUnit] = useState('F')       // 'F' | 'C'
+  const [cloudsVisible, setCloudsVisible] = useState(true)
 
-  // ── Flight route state ────────────────────────────────────────────────────
-  const {
-    routeMode,
-    toggleRouteMode,
-    origin,
-    destination,
-    arcPoints,
-    distanceKm,
-    handleGlobeClick,
-    clearRoute,
-  } = useFlightRoute()
+  // ── Route state (used in turbulence mode) ────────────────────────────────
+  const [routeOrigin, setRouteOrigin] = useState(null)
+  const [routeDest, setRouteDest]     = useState(null)
+  const [routePoints, setRoutePoints] = useState(null)
+  const [routeDistKm, setRouteDistKm] = useState(null)
+
+  // Globe-tap route mode (fallback: user taps two points on the globe)
+  const [globeTapMode, setGlobeTapMode]   = useState(false)
+  const [tapOrigin, setTapOrigin]         = useState(null)
+  const [tapDest, setTapDest]             = useState(null)
+
+  const handleGlobeClick = useCallback((ecefPoint) => {
+    if (!globeTapMode) return
+    const { lat, lon } = ecefToLatLon(ecefPoint)
+    if (!tapOrigin) {
+      setTapOrigin({ lat, lon })
+    } else if (!tapDest) {
+      setTapDest({ lat, lon })
+      const pts = computeGreatCircle(tapOrigin.lat, tapOrigin.lon, lat, lon, 80, 10_500)
+      const dist = haversineDistanceKm(tapOrigin.lat, tapOrigin.lon, lat, lon)
+      setRoutePoints(pts)
+      setRouteDistKm(dist)
+      setGlobeTapMode(false)
+    }
+  }, [globeTapMode, tapOrigin, tapDest])
+
+  // Called from WeatherPanel when user sets an airport route
+  const handleAirportRoute = useCallback((orig, dest, pts, distKm) => {
+    setRouteOrigin(orig)
+    setRouteDest(dest)
+    setRoutePoints(pts)
+    setRouteDistKm(distKm)
+    setTapOrigin(null)
+    setTapDest(null)
+  }, [])
+
+  const clearRoute = useCallback(() => {
+    setRouteOrigin(null); setRouteDest(null)
+    setRoutePoints(null); setRouteDistKm(null)
+    setTapOrigin(null);   setTapDest(null)
+    setGlobeTapMode(false)
+  }, [])
+
+  // Prefer airport route; fall back to tap-drawn route
+  const activeOrigin = routeOrigin || tapOrigin
+  const activeDest   = routeDest   || tapDest
 
   return (
     <>
       <Canvas
-        camera={{ far: 1e9, near: 100 }}
+        camera={{ far: 1e9, near: 1 }}
         gl={{ antialias: false, alpha: false }}
         style={{ width: '100vw', height: '100dvh' }}
         onCreated={({ camera }) => {
-          // Immediately show NYC (default) before geolocation resolves
-          const camPos = latLonToECEF(DEFAULT_LAT + 22, DEFAULT_LON + 18, 2_200_000)
+          const camPos = latLonToECEF(DEFAULT_LAT + 0.003, DEFAULT_LON + 0.002, INITIAL_ALT)
           const lookAt  = latLonToECEF(DEFAULT_LAT, DEFAULT_LON, 0)
           camera.position.set(camPos.x, camPos.y, camPos.z)
           camera.lookAt(lookAt.x, lookAt.y, lookAt.z)
         }}
       >
         <CameraSetup lat={location.lat} lon={location.lon} ready={locationReady} />
+        <CameraTracker onCloudsVisible={setCloudsVisible} />
+
         <AtmosphereScene lat={location.lat} lon={location.lon} date={currentDate}>
-          <Globe routeMode={routeMode} onGlobeClick={handleGlobeClick} />
+          <Globe routeMode={globeTapMode} onGlobeClick={handleGlobeClick} />
 
           <TurbulenceLayer
             turbulence={turbulenceData.turbulence}
-            visible={showTurbulenceLayer}
+            visible={appMode === 'turbulence'}
           />
 
-          {arcPoints && (
+          {routePoints && (
             <FlightRoute
-              arcPoints={arcPoints}
+              arcPoints={routePoints}
               turbulence={turbulenceData.turbulence}
-              distanceKm={distanceKm}
-              origin={origin}
-              destination={destination}
+              distanceKm={routeDistKm}
+              origin={activeOrigin}
+              destination={activeDest}
             />
           )}
 
-          <WeatherClouds
-            coverage={turbulenceData.cloudCoverage}
-            turbulenceDisplacement={turbulenceData.turbulenceDisplacement}
-            windDriftX={turbulenceData.windDriftX}
-            windDriftY={turbulenceData.windDriftY}
-            qualityPreset={qualityPreset}
-          />
+          {/* Volumetric clouds — only when camera is below 120 km */}
+          {cloudsVisible && (
+            <WeatherClouds
+              coverage={turbulenceData.cloudCoverage}
+              turbulenceDisplacement={turbulenceData.turbulenceDisplacement}
+              windDriftX={turbulenceData.windDriftX}
+              windDriftY={turbulenceData.windDriftY}
+              qualityPreset={qualityPreset}
+            />
+          )}
         </AtmosphereScene>
       </Canvas>
 
-      {/* DOM overlay — outside Canvas */}
       <WeatherPanel
         weather={weather}
         turbulence={turbulenceData.turbulence}
         turbulenceLabel={turbulenceData.label}
         turbulenceColor={turbulenceData.color}
         location={location}
-        showTurbulenceLayer={showTurbulenceLayer}
-        onToggleTurbulenceLayer={() => setShowTurbulenceLayer(v => !v)}
-        routeMode={routeMode}
-        onToggleRouteMode={toggleRouteMode}
-        hasRoute={!!(origin && destination)}
-        onClearRoute={clearRoute}
-        distanceKm={distanceKm}
+        locationName={locationName}
+        appMode={appMode}
+        onAppModeChange={setAppMode}
+        tempUnit={tempUnit}
+        onTempUnitChange={setTempUnit}
         qualityPreset={qualityPreset}
         onQualityChange={setQualityPreset}
         currentDate={currentDate}
         onDateChange={setCurrentDate}
+        onAirportRoute={handleAirportRoute}
+        hasRoute={!!(activeOrigin && activeDest)}
+        onClearRoute={clearRoute}
+        routeDistKm={routeDistKm}
+        routeOrigin={routeOrigin}
+        routeDest={routeDest}
+        globeTapMode={globeTapMode}
+        onGlobeTapMode={setGlobeTapMode}
       />
 
-      {/* Loading splash */}
       {weatherLoading && !weather && (
         <div className="loading-splash">
           <div className="loading-globe">🌍</div>

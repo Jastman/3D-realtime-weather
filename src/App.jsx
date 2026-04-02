@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Canvas } from '@react-three/fiber'
+import { useThree } from '@react-three/fiber'
 import { Vector3 } from 'three'
 
 import { AtmosphereScene } from './components/AtmosphereScene'
@@ -12,10 +13,35 @@ import { WeatherPanel } from './components/WeatherPanel'
 import { useWeatherData } from './hooks/useWeatherData'
 import { useTurbulence } from './hooks/useTurbulence'
 import { useFlightRoute } from './hooks/useFlightRoute'
+import { latLonToECEF } from './utils/greatCircle'
 
 // Default location: New York City
 const DEFAULT_LAT = 40.7128
 const DEFAULT_LON = -74.006
+
+/**
+ * Positions the camera at an oblique 3D view of the given location.
+ * Runs on first mount (default NYC) and once more when geolocation resolves.
+ * After that, user controls take over and the camera is not touched.
+ */
+function CameraSetup({ lat, lon, ready }) {
+  const { camera } = useThree()
+  const hasFlown = useRef(false)
+
+  useEffect(() => {
+    // Don't re-position once we've flown to the user's actual location
+    if (hasFlown.current) return
+    if (ready) hasFlown.current = true
+
+    // Camera 2200 km above surface, offset south-east for a 40° oblique angle
+    const camPos = latLonToECEF(lat + 22, lon + 18, 2_200_000)
+    const lookAt  = latLonToECEF(lat, lon, 0)
+    camera.position.set(camPos.x, camPos.y, camPos.z)
+    camera.lookAt(lookAt.x, lookAt.y, lookAt.z)
+  }, [lat, lon, camera, ready])
+
+  return null
+}
 
 export default function App() {
   // ── Location: try geolocation, fall back to NYC ──────────────────────────
@@ -75,10 +101,18 @@ export default function App() {
   return (
     <>
       <Canvas
-        camera={{ position: [0, 0, 2e7], far: 1e9, near: 100 }}
+        camera={{ far: 1e9, near: 100 }}
         gl={{ antialias: false, alpha: false }}
         style={{ width: '100vw', height: '100dvh' }}
+        onCreated={({ camera }) => {
+          // Immediately show NYC (default) before geolocation resolves
+          const camPos = latLonToECEF(DEFAULT_LAT + 22, DEFAULT_LON + 18, 2_200_000)
+          const lookAt  = latLonToECEF(DEFAULT_LAT, DEFAULT_LON, 0)
+          camera.position.set(camPos.x, camPos.y, camPos.z)
+          camera.lookAt(lookAt.x, lookAt.y, lookAt.z)
+        }}
       >
+        <CameraSetup lat={location.lat} lon={location.lon} ready={locationReady} />
         <AtmosphereScene lat={location.lat} lon={location.lon} date={currentDate}>
           <Globe routeMode={routeMode} onGlobeClick={handleGlobeClick} />
 

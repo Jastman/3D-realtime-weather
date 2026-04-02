@@ -73,14 +73,15 @@ function FallbackGlobe({ routeMode, onGlobeClick }) {
 
   return (
     <>
+      {/* Ocean — meshBasicMaterial so it's visible at night without extra lights */}
+      <mesh>
+        <sphereGeometry args={[EARTH_RADIUS - 200, 128, 64]} />
+        <meshBasicMaterial color="#1a4888" />
+      </mesh>
+      {/* Land surface */}
       <mesh onPointerDown={handlePointerDown}>
         <sphereGeometry args={[EARTH_RADIUS, 128, 64]} />
-        <meshStandardMaterial color="#1a6b3c" roughness={0.9} />
-      </mesh>
-      {/* Ocean */}
-      <mesh>
-        <sphereGeometry args={[EARTH_RADIUS - 500, 128, 64]} />
-        <meshStandardMaterial color="#1a4a7a" roughness={0.8} />
+        <meshBasicMaterial color="#2d6a3f" />
       </mesh>
       <GlobeControls enableDamping />
     </>

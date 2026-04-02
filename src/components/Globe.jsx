@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useThree } from '@react-three/fiber'
 import {
   TilesRenderer,
@@ -17,15 +17,11 @@ const ION_TOKEN =
   import.meta.env.VITE_CESIUM_ION_TOKEN ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmMGEzMmI5Yy0xYjkyLTQxYWYtYTQ0ZS1jZGZiNGJlZThmNDQiLCJpZCI6Mzg2MjQ2LCJpYXQiOjE3NzQ5ODA2NDV9.Ea5FeqRaQkC-iJs7Dp-6uxoc8YYmi6ewNyiQ8bRBxoQ'
 
-/**
- * Earth globe rendered from Cesium Ion World Terrain (asset ID 1).
- * GlobeControls handles all orbit/pan/zoom for both mouse and touch.
- *
- * When routeMode is true, pointer events on the hit-sphere are forwarded
- * to onGlobeClick so the user can pick origin/destination points.
- */
 export function Globe({ routeMode = false, onGlobeClick }) {
   const hitSphereRef = useRef()
+  // Track whether Cesium tiles have started rendering (first tile model loaded)
+  const [cesiumActive, setCesiumActive] = useState(false)
+  const [cesiumError, setCesiumError] = useState(false)
 
   function handlePointerDown(e) {
     if (!routeMode || !onGlobeClick) return
@@ -33,40 +29,52 @@ export function Globe({ routeMode = false, onGlobeClick }) {
     onGlobeClick(e.point)
   }
 
-  if (!ION_TOKEN || ION_TOKEN === 'your_cesium_ion_token_here') {
-    return <FallbackGlobe routeMode={routeMode} onGlobeClick={onGlobeClick} />
-  }
+  const useFallback = !ION_TOKEN ||
+    ION_TOKEN === 'your_cesium_ion_token_here' ||
+    cesiumError
 
   return (
     <>
-      {/* Cesium World Terrain */}
-      <TilesRenderer key={ION_TOKEN}>
-        <TilesPlugin
-          plugin={CesiumIonAuthPlugin}
-          args={{ apiToken: ION_TOKEN, assetId: 1 }}
-        />
-        <TilesPlugin plugin={QuantizedMeshPlugin} />
-        <TilesPlugin plugin={GLTFExtensionsPlugin} />
-        <GlobeControls enableDamping />
-        <TilesAttributionOverlay />
-      </TilesRenderer>
+      {/* Always show FallbackGlobe until Cesium tiles are active */}
+      {(!cesiumActive || useFallback) && (
+        <FallbackGlobe routeMode={routeMode} onGlobeClick={onGlobeClick} showControls={useFallback} />
+      )}
 
-      {/* Invisible hit-sphere for route-mode click detection */}
-      {routeMode && (
-        <mesh ref={hitSphereRef} onPointerDown={handlePointerDown}>
-          <sphereGeometry args={[EARTH_RADIUS + 1000, 64, 32]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
+      {!useFallback && (
+        <>
+          <TilesRenderer
+            key={ION_TOKEN}
+            onLoadModel={() => {
+              if (!cesiumActive) setCesiumActive(true)
+            }}
+            onLoadError={(e) => {
+              console.error('Cesium Ion load error:', e)
+              setCesiumError(true)
+            }}
+          >
+            <TilesPlugin
+              plugin={CesiumIonAuthPlugin}
+              args={{ apiToken: ION_TOKEN, assetId: 1 }}
+            />
+            <TilesPlugin plugin={QuantizedMeshPlugin} />
+            <TilesPlugin plugin={GLTFExtensionsPlugin} />
+            <GlobeControls enableDamping />
+            <TilesAttributionOverlay />
+          </TilesRenderer>
+
+          {routeMode && (
+            <mesh ref={hitSphereRef} onPointerDown={handlePointerDown}>
+              <sphereGeometry args={[EARTH_RADIUS + 1000, 64, 32]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+          )}
+        </>
       )}
     </>
   )
 }
 
-/**
- * Fallback globe shown when no Cesium Ion token is configured.
- * Renders a simple shaded Earth sphere so the rest of the app still works.
- */
-function FallbackGlobe({ routeMode, onGlobeClick }) {
+function FallbackGlobe({ routeMode, onGlobeClick, showControls = true }) {
   function handlePointerDown(e) {
     if (!routeMode || !onGlobeClick) return
     e.stopPropagation()
@@ -75,17 +83,15 @@ function FallbackGlobe({ routeMode, onGlobeClick }) {
 
   return (
     <>
-      {/* Ocean — meshBasicMaterial so it's visible at night without extra lights */}
       <mesh>
         <sphereGeometry args={[EARTH_RADIUS - 200, 128, 64]} />
         <meshBasicMaterial color="#1a4888" />
       </mesh>
-      {/* Land surface */}
       <mesh onPointerDown={handlePointerDown}>
         <sphereGeometry args={[EARTH_RADIUS, 128, 64]} />
         <meshBasicMaterial color="#2d6a3f" />
       </mesh>
-      <GlobeControls enableDamping />
+      {showControls && <GlobeControls enableDamping />}
     </>
   )
 }

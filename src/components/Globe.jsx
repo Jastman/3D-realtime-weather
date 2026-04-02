@@ -13,7 +13,9 @@ import {
 } from '3d-tiles-renderer/plugins'
 import { EARTH_RADIUS, ecefToLatLon } from '../utils/greatCircle'
 
-const ION_TOKEN = import.meta.env.VITE_CESIUM_ION_TOKEN
+const ION_TOKEN =
+  import.meta.env.VITE_CESIUM_ION_TOKEN ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmMGEzMmI5Yy0xYjkyLTQxYWYtYTQ0ZS1jZGZiNGJlZThmNDQiLCJpZCI6Mzg2MjQ2LCJpYXQiOjE3NzQ5ODA2NDV9.Ea5FeqRaQkC-iJs7Dp-6uxoc8YYmi6ewNyiQ8bRBxoQ'
 
 /**
  * Earth globe rendered from Cesium Ion World Terrain (asset ID 1).

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useThree } from '@react-three/fiber'
+import { GlobeLabels } from './components/GlobeLabels'
 
 import { AtmosphereScene } from './components/AtmosphereScene'
 import { Globe } from './components/Globe'
@@ -106,6 +107,9 @@ export default function App() {
   )
   const turbulenceData = useTurbulence(weather)
 
+  // ── Label canvas ref (for 2D city labels overlay) ────────────────────────
+  const labelCanvasRef = useRef()
+
   // ── App state ─────────────────────────────────────────────────────────────
   const [qualityPreset, setQualityPreset] = useState('high')
   const [appMode, setAppMode] = useState('weather')   // 'weather' | 'turbulence'
@@ -175,6 +179,12 @@ export default function App() {
         <CameraSetup lat={location.lat} lon={location.lon} ready={locationReady} />
         <CameraTracker onCloudsVisible={setCloudsVisible} />
 
+        {/* Ambient light ensures the globe is never fully black.
+            The atmosphere's SunLight provides directional day/night shading on top. */}
+        <ambientLight intensity={0.12} color="#334466" />
+
+        <GlobeLabels canvasRef={labelCanvasRef} />
+
         <AtmosphereScene lat={location.lat} lon={location.lon} date={currentDate}>
           <Globe routeMode={globeTapMode} onGlobeClick={handleGlobeClick} />
 
@@ -229,6 +239,19 @@ export default function App() {
         routeDest={routeDest}
         globeTapMode={globeTapMode}
         onGlobeTapMode={setGlobeTapMode}
+      />
+
+      {/* 2D canvas overlay for city/country labels (drawn by GlobeLabels via useFrame) */}
+      <canvas
+        ref={labelCanvasRef}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          zIndex: 5,
+        }}
       />
 
       {weatherLoading && !weather && (

@@ -1,5 +1,5 @@
 import { Suspense, useContext, useEffect, useRef, useState } from 'react'
-import { Html, useTexture } from '@react-three/drei'
+import { useTexture } from '@react-three/drei'
 import * as THREE from 'three'
 import {
   TilesRenderer,
@@ -20,9 +20,9 @@ const ION_TOKEN =
   import.meta.env.VITE_CESIUM_ION_TOKEN ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmMGEzMmI5Yy0xYjkyLTQxYWYtYTQ0ZS1jZGZiNGJlZThmNDQiLCJpZCI6Mzg2MjQ2LCJpYXQiOjE3NzQ5ODA2NDV9.Ea5FeqRaQkC-iJs7Dp-6uxoc8YYmi6ewNyiQ8bRBxoQ'
 
-// CDN Earth textures (no API key, served by unpkg)
-const DAY_TEXTURE_URL   = 'https://unpkg.com/three-globe/example/img/earth-day.jpg'
-const NIGHT_TEXTURE_URL = 'https://unpkg.com/three-globe/example/img/earth-night.jpg'
+// CDN Earth textures — jsDelivr (backed by multiple CDNs globally, fast on mobile)
+const DAY_TEXTURE_URL   = 'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-day.jpg'
+const NIGHT_TEXTURE_URL = 'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg'
 
 // Natural Earth country outlines — GeoJSON, ~500 KB
 const BORDERS_URL =
@@ -30,42 +30,6 @@ const BORDERS_URL =
 
 // OpenStreetMap tile URL for imagery drape on Cesium terrain
 const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-
-// ── City labels ──────────────────────────────────────────────────────────────
-// s: size tier 1=small 2=medium 3=large (capitals / megacities)
-const CITIES = [
-  { n: 'New York',      lat: 40.71, lon: -74.01, s: 3 },
-  { n: 'Los Angeles',   lat: 34.05, lon: -118.24, s: 2 },
-  { n: 'Chicago',       lat: 41.88, lon: -87.63,  s: 2 },
-  { n: 'Toronto',       lat: 43.65, lon: -79.38,  s: 2 },
-  { n: 'Mexico City',   lat: 19.43, lon: -99.13,  s: 3 },
-  { n: 'São Paulo',     lat: -23.55, lon: -46.63, s: 3 },
-  { n: 'Buenos Aires',  lat: -34.60, lon: -58.38, s: 2 },
-  { n: 'Bogotá',        lat: 4.71,  lon: -74.07,  s: 1 },
-  { n: 'London',        lat: 51.51, lon: -0.13,   s: 3 },
-  { n: 'Paris',         lat: 48.85, lon: 2.35,    s: 3 },
-  { n: 'Berlin',        lat: 52.52, lon: 13.41,   s: 2 },
-  { n: 'Madrid',        lat: 40.42, lon: -3.70,   s: 2 },
-  { n: 'Rome',          lat: 41.90, lon: 12.50,   s: 2 },
-  { n: 'Moscow',        lat: 55.75, lon: 37.62,   s: 3 },
-  { n: 'Amsterdam',     lat: 52.37, lon: 4.90,    s: 2 },
-  { n: 'Dubai',         lat: 25.20, lon: 55.27,   s: 2 },
-  { n: 'Istanbul',      lat: 41.01, lon: 28.96,   s: 2 },
-  { n: 'Cairo',         lat: 30.04, lon: 31.24,   s: 2 },
-  { n: 'Nairobi',       lat: -1.29, lon: 36.82,   s: 1 },
-  { n: 'Lagos',         lat: 6.52,  lon: 3.38,    s: 2 },
-  { n: 'Johannesburg',  lat: -26.20, lon: 28.04,  s: 1 },
-  { n: 'Beijing',       lat: 39.91, lon: 116.39,  s: 3 },
-  { n: 'Shanghai',      lat: 31.23, lon: 121.47,  s: 3 },
-  { n: 'Tokyo',         lat: 35.69, lon: 139.69,  s: 3 },
-  { n: 'Seoul',         lat: 37.57, lon: 126.98,  s: 2 },
-  { n: 'Singapore',     lat: 1.35,  lon: 103.82,  s: 2 },
-  { n: 'Mumbai',        lat: 19.08, lon: 72.88,   s: 2 },
-  { n: 'New Delhi',     lat: 28.61, lon: 77.21,   s: 2 },
-  { n: 'Bangkok',       lat: 13.75, lon: 100.50,  s: 2 },
-  { n: 'Sydney',        lat: -33.87, lon: 151.21, s: 2 },
-  { n: 'Melbourne',     lat: -37.81, lon: 144.96, s: 1 },
-]
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -122,34 +86,6 @@ function CountryBorders() {
   )
 }
 
-// ── City / capital labels ─────────────────────────────────────────────────────
-
-function CityLabels() {
-  return CITIES.map(city => (
-    <Html
-      key={city.n}
-      position={latLonToECEF(city.lat, city.lon, 60_000).toArray()}
-      center
-      distanceFactor={3_500_000}
-      occlude={false}
-      zIndexRange={[0, 10]}
-    >
-      <span style={{
-        color: city.s >= 3 ? '#fff' : 'rgba(255,255,255,0.8)',
-        fontSize: `${8 + city.s * 2}px`,
-        fontWeight: city.s >= 3 ? 700 : 500,
-        textShadow: '0 1px 3px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,0.8)',
-        whiteSpace: 'nowrap',
-        pointerEvents: 'none',
-        fontFamily: 'system-ui, sans-serif',
-        letterSpacing: '0.2px',
-      }}>
-        {city.n}
-      </span>
-    </Html>
-  ))
-}
-
 // ── Textured Earth sphere (inside Suspense) ───────────────────────────────────
 
 function TexturedEarth({ routeMode, onGlobeClick }) {
@@ -178,7 +114,7 @@ function TexturedEarth({ routeMode, onGlobeClick }) {
   )
 }
 
-// ── Placeholder while texture loads ─────────────────────────────────────────
+// ── Placeholder while texture loads (meshBasicMaterial = no lighting needed) ──
 
 function SimpleEarth({ routeMode, onGlobeClick }) {
   function handlePointerDown(e) {
@@ -187,10 +123,18 @@ function SimpleEarth({ routeMode, onGlobeClick }) {
     onGlobeClick(e.point)
   }
   return (
-    <mesh onPointerDown={handlePointerDown}>
-      <sphereGeometry args={[EARTH_RADIUS, 64, 32]} />
-      <meshStandardMaterial color="#1a3a6e" roughness={0.9} metalness={0} />
-    </mesh>
+    <>
+      {/* Ocean */}
+      <mesh>
+        <sphereGeometry args={[EARTH_RADIUS - 100, 64, 32]} />
+        <meshBasicMaterial color="#1a3a6e" />
+      </mesh>
+      {/* Land — slightly larger so ocean shows at edges */}
+      <mesh onPointerDown={handlePointerDown}>
+        <sphereGeometry args={[EARTH_RADIUS, 64, 32]} />
+        <meshBasicMaterial color="#2d5a27" />
+      </mesh>
+    </>
   )
 }
 
@@ -222,7 +166,6 @@ function FallbackGlobe({ routeMode, onGlobeClick, showControls = true }) {
         <TexturedEarth routeMode={routeMode} onGlobeClick={onGlobeClick} />
       </Suspense>
       <CountryBorders />
-      <CityLabels />
       {showControls && <GlobeControls enableDamping />}
     </>
   )

@@ -1,17 +1,16 @@
 import type { NextConfig } from 'next'
 
-// On GitHub Actions the basePath must match the repo name so assets load correctly
+// GitHub Pages project sites are served at /REPO-NAME/ — must match exact case of the repo
 const isGHPages = process.env.GITHUB_ACTIONS === 'true'
-const basePath  = isGHPages ? '/3d-realtime-weather' : ''
+const basePath  = isGHPages ? '/3D-realtime-weather' : ''
 
 const nextConfig: NextConfig = {
-  output: 'export',         // static HTML — required for GitHub Pages
+  output: 'export',
   basePath,
   assetPrefix: basePath,
   trailingSlash: true,
-
   images: {
-    unoptimized: true,      // next/image optimisation not available on static hosts
+    unoptimized: true,
   },
 }
 

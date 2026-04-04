@@ -39,29 +39,25 @@ export function weatherToScene(
 
   const overcastFactor = weather.cloudCover / 100
 
-  // Sky — keep turbidity modest so sky stays blue, not white
   const turbidity = 2 + overcastFactor * 4 + (isStormy ? 3 : 0) + (isFoggy ? 5 : 0)
   const rayleigh  = 1.0 + overcastFactor * 0.3
 
-  // Lighting
   const dayFactor        = Math.max(0, Math.sin((elevation * Math.PI) / 180))
   const sunIntensity     = dayFactor * (1 - overcastFactor * 0.7) * (isStormy ? 0.25 : 1)
-  const ambientIntensity = 0.12 + overcastFactor * 0.25 + (isStormy ? 0.1 : 0)
+  // Higher ambient base so terrain is clearly visible (was 0.12)
+  const ambientIntensity = 0.30 + overcastFactor * 0.35 + (isStormy ? 0.1 : 0)
 
-  // Fog — near-zero for clear sky so the scene doesn't white-out at altitude
   const fogDensity = isFoggy
     ? 0.0015 + overcastFactor * 0.001
     : isStormy
     ? 0.0008
-    : overcastFactor * 0.00008    // almost nothing for clear sky
+    : overcastFactor * 0.00008
   const fogColor = isStormy ? '#4a5568' : overcastFactor > 0.7 ? '#8fa0b4' : '#c8d8e8'
 
-  // Clouds
   const cloudCoverage = weather.cloudCover / 100
   const cloudSpeed    = 0.3 + (weather.windSpeed / 50) * 2 + (isStormy ? 1.5 : 0)
   const cloudAltitude = isStormy ? 600 : overcastFactor > 0.7 ? 500 : 800
 
-  // Precipitation
   const rainIntensity = isRaining
     ? Math.min(1, weather.precipitation * 0.5 + 0.3)
     : isStormy ? 0.8 : 0
@@ -71,7 +67,6 @@ export function weatherToScene(
   const windX   = Math.sin(windRad) * weather.windSpeed / 3.6
   const windZ   = Math.cos(windRad) * weather.windSpeed / 3.6
 
-  // Post-processing
   const bloomStrength     = 0.15 + dayFactor * (isStormy ? 0.05 : 0.3)
   const vignetteIntensity = isStormy ? 0.5 : overcastFactor * 0.2 + 0.1
   const saturation        = isStormy ? 0.75 : isFoggy ? 0.88 : 1.05

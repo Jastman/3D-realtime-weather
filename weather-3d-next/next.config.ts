@@ -1,26 +1,17 @@
 import type { NextConfig } from 'next'
 
-const nextConfig: NextConfig = {
-  // Allow cross-origin requests for tile images (satellite + terrain)
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: 'tile.googleapis.com' },
-      { protocol: 'https', hostname: 'server.arcgisonline.com' },
-      { protocol: 'https', hostname: 'mt*.google.com' },
-    ],
-  },
+// On GitHub Actions the basePath must match the repo name so assets load correctly
+const isGHPages = process.env.GITHUB_ACTIONS === 'true'
+const basePath  = isGHPages ? '/3d-realtime-weather' : ''
 
-  // Headers needed for SharedArrayBuffer (used by some Three.js features)
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          { key: 'Cross-Origin-Opener-Policy',   value: 'same-origin' },
-          { key: 'Cross-Origin-Embedder-Policy',  value: 'require-corp' },
-        ],
-      },
-    ]
+const nextConfig: NextConfig = {
+  output: 'export',         // static HTML — required for GitHub Pages
+  basePath,
+  assetPrefix: basePath,
+  trailingSlash: true,
+
+  images: {
+    unoptimized: true,      // next/image optimisation not available on static hosts
   },
 }
 

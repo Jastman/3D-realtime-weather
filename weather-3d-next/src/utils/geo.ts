@@ -1,4 +1,4 @@
-// ── Geographic / tile math utilities ─────────────────────────────────────────
+// Geographic / tile math utilities
 
 /** Earth's circumference in meters (at equator, Web Mercator) */
 export const EARTH_CIRCUMFERENCE = 40_075_016.686
@@ -23,6 +23,12 @@ export function tileBounds(x: number, y: number, z: number) {
   const east  = ((x + 1) / n) * 360 - 180
   const south = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 1) / n))) * (180 / Math.PI)
   return { west, north, east, south }
+}
+
+/** Get center lat/lon of a tile */
+export function tileCenterLatLon(x: number, y: number, z: number) {
+  const { west, north, east, south } = tileBounds(x, y, z)
+  return { lat: (north + south) / 2, lon: (west + east) / 2 }
 }
 
 /** Ground resolution in meters/pixel at given latitude and zoom */
@@ -63,7 +69,8 @@ export function altitudeToZoom(altMeters: number): number {
   if (altMeters > 600)    return 13
   if (altMeters > 300)    return 14
   if (altMeters > 150)    return 15
-  return 16
+  if (altMeters > 75)     return 16
+  return 17
 }
 
 /** Sun elevation angle from time and location (simplified) */

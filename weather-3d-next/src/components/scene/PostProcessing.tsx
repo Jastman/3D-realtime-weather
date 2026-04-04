@@ -1,11 +1,10 @@
 'use client'
 /**
- * PostProcessing — composable post-process effects driven by scene params.
+ * PostProcessing - composable post-process effects driven by scene params.
  *
- * High quality uses 4x MSAA + chromatic aberration (SSAO removed — requires
- * NormalPass setup that conflicts with the forward-rendering satellite tiles).
- * Medium: standard bloom/vignette + chromatic aberration.
- * Low: lightweight bloom/vignette only.
+ * Low:    no effects at all (raw render, max performance)
+ * Medium: bloom + vignette + subtle chromatic aberration
+ * High:   4x MSAA + large bloom + strong chromatic aberration with radial modulation
  */
 import { useMemo } from 'react'
 import { EffectComposer, Bloom, Vignette, BrightnessContrast, HueSaturation, ChromaticAberration } from '@react-three/postprocessing'
@@ -35,30 +34,24 @@ function CoreEffects({ params, kernelSize }: { params: SceneParams; kernelSize: 
 }
 
 export function PostProcessing({ params, quality }: { params: SceneParams; quality: 'low' | 'medium' | 'high' }) {
-  const aberration = useMemo(() => new THREE.Vector2(0.0004, 0.0004), [])
+  const aberrationMed  = useMemo(() => new THREE.Vector2(0.0008, 0.0008), [])
+  const aberrationHigh = useMemo(() => new THREE.Vector2(0.0022, 0.0022), [])
 
-  if (quality === 'low') {
-    return (
-      <EffectComposer multisampling={0}>
-        <CoreEffects params={params} kernelSize={KernelSize.SMALL} />
-      </EffectComposer>
-    )
-  }
+  if (quality === 'low') return null
 
   if (quality === 'medium') {
     return (
       <EffectComposer multisampling={0}>
         <CoreEffects params={params} kernelSize={KernelSize.MEDIUM} />
-        <ChromaticAberration offset={aberration} blendFunction={BlendFunction.NORMAL} />
+        <ChromaticAberration offset={aberrationMed} blendFunction={BlendFunction.NORMAL} />
       </EffectComposer>
     )
   }
 
-  // High — 4x MSAA + larger bloom kernel + chromatic aberration
   return (
     <EffectComposer multisampling={4}>
       <CoreEffects params={params} kernelSize={KernelSize.LARGE} />
-      <ChromaticAberration offset={aberration} blendFunction={BlendFunction.NORMAL} />
+      <ChromaticAberration offset={aberrationHigh} blendFunction={BlendFunction.NORMAL} radialModulation />
     </EffectComposer>
   )
 }

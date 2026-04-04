@@ -1,118 +1,148 @@
 'use client'
 /**
- * SatelliteTiles — loads satellite map tiles as textured PlaneGeometry meshes.
+ * SatelliteTiles - geo-registered satellite imagery with 3D terrain elevation.
  *
- * Tile sources (priority order):
- *   1. Google Maps Tile API v1 (requires NEXT_PUBLIC_GOOGLE_MAPS_KEY + session)
- *   2. ESRI World Imagery (free, no key, looks identical for most purposes)
+ * Satellite: ESRI World Imagery (free) or Google Maps Tile API v1.
+ * Elevation:  AWS Terrain Tiles / Terrarium format (free, CORS-enabled).
+ *   elevation_m = (R * 256 + G + B / 256) - 32768
  *
- * The grid is centred on refLat/refLon. Camera altitude drives the zoom level
- * so tile resolution automatically improves as you fly closer.
+ * Each tile uses 32x32 mesh segments so terrain features render smoothly.
  */
 import { useRef, useEffect, useState, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { latLonToTile, tileBounds, tileSizeMeters, altitudeToZoom, latLonToWorld } from '@/utils/geo'
 
-const TILE_SIZE_PX   = 256
-const GRID_RADIUS    = 3   // tiles in each direction from centre
-const EARTH_RADIUS_M = 6_371_000
-
-// Tile URL helpers
+const GRID_RADIUS       = 4    // 9x9 = 81 tiles
+const TERRAIN_SEGMENTS  = 32   // (33x33) vertices per tile
+const VERT_EXAGGERATION = 1.5  // visual height scale multiplier
 
 function esriTileUrl(x: number, y: number, z: number) {
   return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
 }
-
-function googleTileUrl(x: number, y: number, z: number, session: string, apiKey: string) {
-  return `https://tile.googleapis.com/v1/2dtiles/${z}/${x}/${y}?session=${session}&key=${apiKey}`
+function googleTileUrl(x: number, y: number, z: number, session: string, key: string) {
+  return `https://tile.googleapis.com/v1/2dtiles/${z}/${x}/${y}?session=${session}&key=${key}`
+}
+function terrainUrl(x: number, y: number, z: number) {
+  return `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`
 }
 
-// Texture cache
+const texCache:    Map<string, THREE.Texture>  = new Map()
+const heightCache: Map<string, Float32Array>   = new Map()
+const texLoader = new THREE.TextureLoader()
 
-const textureCache = new Map<string, THREE.Texture>()
-const loader = new THREE.TextureLoader()
-
-function loadTile(url: string): Promise<THREE.Texture> {
-  if (textureCache.has(url)) return Promise.resolve(textureCache.get(url)!)
-  return new Promise((resolve, reject) => {
-    loader.load(
-      url,
-      (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace
-        tex.anisotropy = 16
-        tex.minFilter  = THREE.LinearMipmapLinearFilter
-        tex.generateMipmaps = true
-        textureCache.set(url, tex)
-        resolve(tex)
-      },
-      undefined,
-      reject
-    )
-  })
+function loadSatTile(url: string): Promise<THREE.Texture> {
+  if (texCache.has(url)) return Promise.resolve(texCache.get(url)!)
+  return new Promise((resolve, reject) =>
+    texLoader.load(url, tex => {
+      tex.colorSpace     = THREE.SRGBColorSpace
+      tex.anisotropy     = 16
+      tex.minFilter      = THREE.LinearMipmapLinearFilter
+      tex.generateMipmaps = true
+      texCache.set(url, tex)
+      resolve(tex)
+    }, undefined, reject)
+  )
 }
 
-// Single tile mesh
+async function loadTerrainHeights(x: number, y: number, z: number): Promise<Float32Array | null> {
+  if (z < 10) return null
+  const key = `${z}/${x}/${y}`
+  if (heightCache.has(key)) return heightCache.get(key)!
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.crossOrigin = 'anonymous'
+      el.onload  = () => resolve(el)
+      el.onerror = reject
+      el.src = terrainUrl(x, y, z)
+    })
+    const verts  = TERRAIN_SEGMENTS + 1
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = verts
+    const ctx    = canvas.getContext('2d')!
+    ctx.drawImage(img, 0, 0, verts, verts)
+    const pixels  = ctx.getImageData(0, 0, verts, verts).data
+    const heights = new Float32Array(verts * verts)
+    for (let i = 0; i < heights.length; i++) {
+      const r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2]
+      const elev = r * 256 + g + b / 256 - 32768
+      heights[i] = Math.max(0, elev) * VERT_EXAGGERATION
+    }
+    heightCache.set(key, heights)
+    return heights
+  } catch {
+    return null
+  }
+}
 
 interface TileProps {
-  tileX: number
-  tileY: number
-  zoom: number
-  refLat: number
-  refLon: number
-  googleSession: string | null
+  tileX: number; tileY: number; zoom: number
+  refLat: number; refLon: number; googleSession: string | null
 }
 
 function Tile({ tileX, tileY, zoom, refLat, refLon, googleSession }: TileProps) {
-  const meshRef = useRef<THREE.Mesh>(null)
+  const meshRef        = useRef<THREE.Mesh>(null)
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
+  const [heights, setHeights] = useState<Float32Array | null>(null)
+  const heightsApplied = useRef(false)
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? ''
+  const apiKey    = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? ''
   const useGoogle = !!(apiKey && googleSession)
 
-  const url = useMemo(() => {
-    return useGoogle
+  const satUrl = useMemo(() =>
+    useGoogle
       ? googleTileUrl(tileX, tileY, zoom, googleSession!, apiKey)
       : esriTileUrl(tileX, tileY, zoom)
-  }, [tileX, tileY, zoom, useGoogle, googleSession, apiKey])
+  , [tileX, tileY, zoom, useGoogle, googleSession, apiKey])
 
   useEffect(() => {
     let alive = true
-    loadTile(url).then(tex => { if (alive) setTexture(tex) }).catch(() => {})
+    heightsApplied.current = false
+    loadSatTile(satUrl)
+      .then(tex => { if (alive) setTexture(tex) })
+      .catch(() => {})
+    loadTerrainHeights(tileX, tileY, zoom)
+      .then(h   => { if (alive) setHeights(h) })
+      .catch(() => {})
     return () => { alive = false }
-  }, [url])
+  }, [satUrl, tileX, tileY, zoom])
 
-  // Compute world-space position and size
+  useEffect(() => {
+    if (!meshRef.current || !heights || heightsApplied.current) return
+    const geo  = meshRef.current.geometry as THREE.PlaneGeometry
+    const pos  = geo.attributes.position as THREE.BufferAttribute
+    const verts = TERRAIN_SEGMENTS + 1
+    for (let row = 0; row < verts; row++) {
+      for (let col = 0; col < verts; col++) {
+        pos.setZ(row * verts + col, heights[row * verts + col])
+      }
+    }
+    pos.needsUpdate = true
+    geo.computeVertexNormals()
+    heightsApplied.current = true
+  }, [heights])
+
   const { position, size } = useMemo(() => {
-    const bounds = tileBounds(tileX, tileY, zoom)
+    const bounds    = tileBounds(tileX, tileY, zoom)
     const centerLat = (bounds.north + bounds.south) / 2
-    const centerLon = (bounds.west + bounds.east) / 2
-    const { x, z } = latLonToWorld(centerLat, centerLon, refLat, refLon)
-    const s = tileSizeMeters(refLat, zoom)
-    return { position: [x, 0, z] as [number, number, number], size: s }
+    const centerLon = (bounds.west  + bounds.east)  / 2
+    const { x, z }  = latLonToWorld(centerLat, centerLon, refLat, refLon)
+    return { position: [x, 0, z] as [number, number, number], size: tileSizeMeters(refLat, zoom) }
   }, [tileX, tileY, zoom, refLat, refLon])
 
   if (!texture) return null
 
   return (
     <mesh ref={meshRef} position={position} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[size, size, 8, 8]} />
-      <meshStandardMaterial
-        map={texture}
-        roughness={0.95}
-        metalness={0}
-        envMapIntensity={0.1}
-      />
+      <planeGeometry args={[size, size, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS]} />
+      <meshStandardMaterial map={texture} roughness={0.85} metalness={0} envMapIntensity={0.2} />
     </mesh>
   )
 }
 
-// Tile grid
-
 interface SatelliteTilesProps {
-  lat: number
-  lon: number
-  googleSession: string | null
+  lat: number; lon: number; googleSession: string | null
 }
 
 export function SatelliteTiles({ lat, lon, googleSession }: SatelliteTilesProps) {
@@ -120,7 +150,6 @@ export function SatelliteTiles({ lat, lon, googleSession }: SatelliteTilesProps)
   const [zoom, setZoom] = useState(14)
   const prevAlt = useRef(0)
 
-  // Update zoom level from camera altitude
   useFrame(() => {
     const alt = Math.max(50, camera.position.y)
     if (Math.abs(alt - prevAlt.current) > 50) {
@@ -148,11 +177,8 @@ export function SatelliteTiles({ lat, lon, googleSession }: SatelliteTilesProps)
       {tiles.map(({ x, y }) => (
         <Tile
           key={`${zoom}-${x}-${y}`}
-          tileX={x}
-          tileY={y}
-          zoom={zoom}
-          refLat={lat}
-          refLon={lon}
+          tileX={x} tileY={y} zoom={zoom}
+          refLat={lat} refLon={lon}
           googleSession={googleSession}
         />
       ))}

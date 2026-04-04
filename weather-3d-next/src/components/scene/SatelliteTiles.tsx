@@ -6,7 +6,7 @@
  *   1. Google Maps Tile API v1 (requires NEXT_PUBLIC_GOOGLE_MAPS_KEY + session)
  *   2. ESRI World Imagery (free, no key, looks identical for most purposes)
  *
- * The grid is centred on `refLat/refLon`. Camera altitude drives the zoom level
+ * The grid is centred on refLat/refLon. Camera altitude drives the zoom level
  * so tile resolution automatically improves as you fly closer.
  */
 import { useRef, useEffect, useState, useMemo } from 'react'
@@ -14,7 +14,11 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { latLonToTile, tileBounds, tileSizeMeters, altitudeToZoom, latLonToWorld } from '@/utils/geo'
 
+const TILE_SIZE_PX   = 256
 const GRID_RADIUS    = 3   // tiles in each direction from centre
+const EARTH_RADIUS_M = 6_371_000
+
+// Tile URL helpers
 
 function esriTileUrl(x: number, y: number, z: number) {
   return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
@@ -23,6 +27,8 @@ function esriTileUrl(x: number, y: number, z: number) {
 function googleTileUrl(x: number, y: number, z: number, session: string, apiKey: string) {
   return `https://tile.googleapis.com/v1/2dtiles/${z}/${x}/${y}?session=${session}&key=${apiKey}`
 }
+
+// Texture cache
 
 const textureCache = new Map<string, THREE.Texture>()
 const loader = new THREE.TextureLoader()
@@ -34,7 +40,9 @@ function loadTile(url: string): Promise<THREE.Texture> {
       url,
       (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace
-        tex.anisotropy = 8
+        tex.anisotropy = 16
+        tex.minFilter  = THREE.LinearMipmapLinearFilter
+        tex.generateMipmaps = true
         textureCache.set(url, tex)
         resolve(tex)
       },
@@ -43,6 +51,8 @@ function loadTile(url: string): Promise<THREE.Texture> {
     )
   })
 }
+
+// Single tile mesh
 
 interface TileProps {
   tileX: number
@@ -72,6 +82,7 @@ function Tile({ tileX, tileY, zoom, refLat, refLon, googleSession }: TileProps) 
     return () => { alive = false }
   }, [url])
 
+  // Compute world-space position and size
   const { position, size } = useMemo(() => {
     const bounds = tileBounds(tileX, tileY, zoom)
     const centerLat = (bounds.north + bounds.south) / 2
@@ -86,10 +97,17 @@ function Tile({ tileX, tileY, zoom, refLat, refLon, googleSession }: TileProps) 
   return (
     <mesh ref={meshRef} position={position} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[size, size, 8, 8]} />
-      <meshStandardMaterial map={texture} roughness={0.95} metalness={0} envMapIntensity={0.1} />
+      <meshStandardMaterial
+        map={texture}
+        roughness={0.95}
+        metalness={0}
+        envMapIntensity={0.1}
+      />
     </mesh>
   )
 }
+
+// Tile grid
 
 interface SatelliteTilesProps {
   lat: number
@@ -102,6 +120,7 @@ export function SatelliteTiles({ lat, lon, googleSession }: SatelliteTilesProps)
   const [zoom, setZoom] = useState(14)
   const prevAlt = useRef(0)
 
+  // Update zoom level from camera altitude
   useFrame(() => {
     const alt = Math.max(50, camera.position.y)
     if (Math.abs(alt - prevAlt.current) > 50) {
@@ -127,7 +146,15 @@ export function SatelliteTiles({ lat, lon, googleSession }: SatelliteTilesProps)
   return (
     <group>
       {tiles.map(({ x, y }) => (
-        <Tile key={`${zoom}-${x}-${y}`} tileX={x} tileY={y} zoom={zoom} refLat={lat} refLon={lon} googleSession={googleSession} />
+        <Tile
+          key={`${zoom}-${x}-${y}`}
+          tileX={x}
+          tileY={y}
+          zoom={zoom}
+          refLat={lat}
+          refLon={lon}
+          googleSession={googleSession}
+        />
       ))}
     </group>
   )
